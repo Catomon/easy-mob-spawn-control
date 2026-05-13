@@ -1,48 +1,49 @@
 package io.github.catomon.easymobspawncontrol.network;
 
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.network.NetworkEvent;
+import io.github.catomon.easymobspawncontrol.ModCommon;
+import io.netty.buffer.ByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Supplier;
 
-// Server-to-Client packet sending current config
-public class ConfigPacket {
-    public final Map<String, Double> spawnRates;
-    public final Map<String, Integer> spawnCaps;
-    public final List<String> bannedMobs;
+public record ConfigPacket(
+        Map<String, Double> spawnRates,
+        Map<String, Integer> spawnCaps,
+        List<String> bannedMobs
+) implements CustomPacketPayload {
+    public static final Type<ConfigPacket> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(ModCommon.MODID, "config"));
 
-    public ConfigPacket(Map<String, Double> spawnRates, Map<String, Integer> spawnCaps, List<String> bannedMobs) {
-        this.spawnRates = new HashMap<>(spawnRates);
-        this.spawnCaps = new HashMap<>(spawnCaps);
-        this.bannedMobs = new ArrayList<>(bannedMobs);
+    public static final StreamCodec<ByteBuf, ConfigPacket> STREAM_CODEC = StreamCodec.composite(
+            ByteBufCodecs.map(HashMap::new, ByteBufCodecs.STRING_UTF8, ByteBufCodecs.DOUBLE),
+            ConfigPacket::spawnRates,
+
+            ByteBufCodecs.map(HashMap::new, ByteBufCodecs.STRING_UTF8, ByteBufCodecs.VAR_INT),
+            ConfigPacket::spawnCaps,
+
+            ByteBufCodecs.STRING_UTF8.apply(ByteBufCodecs.list()),
+            ConfigPacket::bannedMobs,
+
+            ConfigPacket::new
+    );
+
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
-    public ConfigPacket(FriendlyByteBuf buf) {
-        this.spawnRates = buf.readMap(FriendlyByteBuf::readUtf, FriendlyByteBuf::readDouble);
-        this.spawnCaps = buf.readMap(FriendlyByteBuf::readUtf, FriendlyByteBuf::readInt);
-        this.bannedMobs = buf.readList(FriendlyByteBuf::readUtf);
-    }
-
-    public void encode(FriendlyByteBuf buf) {
-        buf.writeMap(this.spawnRates, FriendlyByteBuf::writeUtf, FriendlyByteBuf::writeDouble);
-        buf.writeMap(this.spawnCaps, FriendlyByteBuf::writeUtf, FriendlyByteBuf::writeInt);
-        buf.writeCollection(this.bannedMobs, FriendlyByteBuf::writeUtf);
-    }
-
-    public static void handle(ConfigPacket msg, Supplier<NetworkEvent.Context> ctx) {
-        NetworkEvent.Context context = ctx.get();
-
-        if (!context.getDirection().getReceptionSide().isClient()) {
-            context.setPacketHandled(false);
+    public void handle(IPayloadContext context) {
+        if (!context.flow().isClientbound()) {
             return;
         }
 
-        ClientHandler.handle(msg, ctx);
-
-        context.setPacketHandled(true);
+        context.enqueueWork(() -> {
+            ClientHandler.handle(this);
+        });
     }
 }

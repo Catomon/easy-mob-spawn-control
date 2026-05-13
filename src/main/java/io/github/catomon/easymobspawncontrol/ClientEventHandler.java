@@ -5,15 +5,14 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.MobCategory;
 import net.minecraft.world.level.Level;
-import net.minecraftforge.api.distmarker.Dist;
-import net.minecraftforge.event.entity.EntityJoinLevelEvent;
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.registries.ForgeRegistries;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 
 import java.util.*;
 
-@Mod.EventBusSubscriber(Dist.CLIENT)
+@EventBusSubscriber(Dist.CLIENT)
 public class ClientEventHandler {
 
     private static final Map<String, SpawnControlScreen.MobEntry> recentSpawns =
@@ -37,7 +36,7 @@ public class ClientEventHandler {
         if (!level.isClientSide()) return;
 
         EntityType<?> type = entity.getType();
-        var id = ForgeRegistries.ENTITY_TYPES.getKey(type);
+        var id = EntityType.getKey(type);
         if (id == null) return;
         String idString = id.toString();
 

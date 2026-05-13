@@ -1,15 +1,16 @@
 package io.github.catomon.easymobspawncontrol;
 
-import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
-import net.minecraftforge.fml.config.ModConfig;
-import net.minecraftforge.fml.event.config.ModConfigEvent;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.fml.config.ModConfig;
+import net.neoforged.fml.event.config.ModConfigEvent;
 
-@Mod.EventBusSubscriber(bus = Mod.EventBusSubscriber.Bus.MOD)
+@EventBusSubscriber
 public class CommonEventHandler {
     @SubscribeEvent
     public static void onConfigLoad(ModConfigEvent.Loading event) {
-        if (event.getConfig().getType().equals(ModConfig.Type.COMMON))
+        if (event.getConfig().getType().equals(ModConfig.Type.COMMON)) {
             CommonConfig.reload();
+        }
     }
 }

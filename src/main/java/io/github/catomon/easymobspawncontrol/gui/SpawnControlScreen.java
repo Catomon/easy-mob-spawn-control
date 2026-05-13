@@ -3,9 +3,9 @@ package io.github.catomon.easymobspawncontrol.gui;
 import io.github.catomon.easymobspawncontrol.ClientEventHandler;
 import io.github.catomon.easymobspawncontrol.CommonConfig;
 import io.github.catomon.easymobspawncontrol.ModCommon;
+import io.github.catomon.easymobspawncontrol.ServerEventsHandler;
 import io.github.catomon.easymobspawncontrol.network.ConfigRequestPacket;
 import io.github.catomon.easymobspawncontrol.network.MobCountListRequest;
-import io.github.catomon.easymobspawncontrol.network.NetworkHandler;
 import io.github.catomon.easymobspawncontrol.network.SaveConfigPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -19,8 +19,8 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.level.Level;
-import net.minecraftforge.client.gui.widget.ForgeSlider;
-import net.minecraftforge.registries.ForgeRegistries;
+import net.neoforged.neoforge.client.gui.widget.ExtendedSlider;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.*;
 
@@ -43,12 +43,11 @@ public class SpawnControlScreen extends Screen {
     private EditBox searchBox;
     private Button toggleButton;
     private Button banCheckbox;
+    private ExtendedSlider spawnrateSlider;
     ViewMode viewMode = ViewMode.ALL_MOBS;
     private String selectedMob = null;
     private int selectedPercent = 100;
     private boolean selectedSpawnDisabled = false;
-
-    private ForgeSlider spawnrateSlider;
 
     boolean isDedicatedServerConfig;
 
@@ -105,7 +104,6 @@ public class SpawnControlScreen extends Screen {
 
         receivedMobCounts = null;
 
-        // List toggle button
         updateToggleButton();
 
         updateInWorldEntriesButton = Button.builder(
@@ -121,7 +119,7 @@ public class SpawnControlScreen extends Screen {
                                     var serverPlayer = minecraft.getSingleplayerServer().getPlayerList().getPlayers().stream().filter(p -> p.getUUID().equals(minecraft.player.getUUID())).findFirst().orElse(null);
                                     if (serverPlayer == null) return;
                                     var serverLevel = serverPlayer.serverLevel();
-                                    for (Entity entity : serverLevel.getEntities().getAll()) {
+                                    for (Entity entity : serverLevel.getAllEntities()) {
                                         ResourceLocation id = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
                                         if (id == null) continue;
 
@@ -129,7 +127,7 @@ public class SpawnControlScreen extends Screen {
                                         mobs.merge(key, 1, Integer::sum);
                                     }
                                 } else {
-                                    NetworkHandler.INSTANCE.sendToServer(new MobCountListRequest());
+                                    PacketDistributor.sendToServer(new MobCountListRequest());
 
 //                                    for (Entity entity : ((ClientLevel) level).entitiesForRendering()) {
 //                                        ResourceLocation id = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
@@ -154,11 +152,19 @@ public class SpawnControlScreen extends Screen {
                         width / 5 - 30, height / 2 - 10, 60, 20
                 ).build();
         addRenderableWidget(updateInWorldEntriesButton);
-        updateUpdateButtonVisibility();
+        if (inWorldEntries.isEmpty()) {
+            updateInWorldEntriesButton.active = viewMode == ViewMode.IN_WORLD;
+            updateInWorldEntriesButton.visible = viewMode == ViewMode.IN_WORLD;
+        } else {
+            updateInWorldEntriesButton.active = false;
+            updateInWorldEntriesButton.visible = false;
+        }
 
         searchBox = new EditBox(font, 30, 50, 150, 20,
                 Component.translatable("gui.easy_mob_spawn_control.search_placeholder"));
-        searchBox.setResponder(text -> refreshList());
+        searchBox.setResponder(text -> {
+            refreshList();
+        });
         addRenderableWidget(searchBox);
 
         mobList = new MobListWidget(this);
@@ -190,19 +196,9 @@ public class SpawnControlScreen extends Screen {
         refreshList();
     }
 
-    private void updateUpdateButtonVisibility() {
-        if (inWorldEntries.isEmpty() && Minecraft.getInstance().level != null) {
-            updateInWorldEntriesButton.active = viewMode == ViewMode.IN_WORLD;
-            updateInWorldEntriesButton.visible = viewMode == ViewMode.IN_WORLD;
-        } else {
-            updateInWorldEntriesButton.active = false;
-            updateInWorldEntriesButton.visible = false;
-        }
-    }
-
     public void applyChanges() {
         if (isDedicatedServerConfig) {
-            NetworkHandler.INSTANCE.sendToServer(new SaveConfigPacket(previewSpawnRates, previewCaps, previewBans));
+            PacketDistributor.sendToServer(new SaveConfigPacket(previewSpawnRates, previewCaps, previewBans));
         } else {
             CommonConfig.saveSpawnRates(previewSpawnRates);
             CommonConfig.saveBannedMobs(previewBans);
@@ -216,7 +212,7 @@ public class SpawnControlScreen extends Screen {
                     for (ServerLevel serverLevel : server.getAllLevels()) {
                         List<Entity> bannedEntities = new ArrayList<>();
                         for (Entity entity : serverLevel.getEntities().getAll()) {
-                            var key = ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
+                            var key = EntityType.getKey(entity.getType());
                             if (key != null) {
                                 String id = key.toString();
                                 if (CommonConfig.bannedMobs.contains(id)) {
@@ -247,7 +243,13 @@ public class SpawnControlScreen extends Screen {
                             updateToggleButton();
                             refreshList();
 
-                            updateUpdateButtonVisibility();
+                            if (inWorldEntries.isEmpty()) {
+                                updateInWorldEntriesButton.active = viewMode == ViewMode.IN_WORLD;
+                                updateInWorldEntriesButton.visible = viewMode == ViewMode.IN_WORLD;
+                            } else {
+                                updateInWorldEntriesButton.active = false;
+                                updateInWorldEntriesButton.visible = false;
+                            }
                         })
                 .bounds(30, 20, 180, 20)
                 .build();
@@ -288,7 +290,7 @@ public class SpawnControlScreen extends Screen {
             case BANNED:
                 for (String id : previewBans) {
                     if (query.isEmpty() || id.toLowerCase().contains(query)) {
-                        EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(ResourceLocation.parse(id));
+                        EntityType<?> type = EntityType.byString(id).orElse(null);
                         if (type != null && type.getCategory() != MobCategory.MISC) {
                             entries.add(new MobEntry(type.getDescription().getString(), id));
                         }
@@ -299,7 +301,7 @@ public class SpawnControlScreen extends Screen {
             case EDITED:
                 for (String id : previewSpawnRates.keySet()) {
                     if (query.isEmpty() || id.toLowerCase().contains(query)) {
-                        EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(ResourceLocation.parse(id));
+                        EntityType<?> type = EntityType.byString(id).orElse(null);
                         if (type != null && type.getCategory() != MobCategory.MISC) {
                             entries.add(new MobEntry(type.getDescription().getString(), id));
                         }
@@ -310,7 +312,7 @@ public class SpawnControlScreen extends Screen {
             case IN_WORLD:
                 for (EntityType<?> type : BuiltInRegistries.ENTITY_TYPE) {
                     if (type.getCategory() != MobCategory.MISC) {
-                        var key = ForgeRegistries.ENTITY_TYPES.getKey(type);
+                        var key = EntityType.getKey(type);
                         String id = key != null ? key.toString() : "unknown";
                         var name = type.getDescription().getString();
                         if (!inWorldEntries.containsKey(id)) continue;
@@ -325,7 +327,7 @@ public class SpawnControlScreen extends Screen {
             default:
                 for (EntityType<?> type : BuiltInRegistries.ENTITY_TYPE) {
                     if (type.getCategory() != MobCategory.MISC) {
-                        var key = ForgeRegistries.ENTITY_TYPES.getKey(type);
+                        var key = EntityType.getKey(type);
                         String id = key != null ? key.toString() : "unknown";
                         var name = type.getDescription().getString();
                         if (query.isEmpty() || id.toLowerCase().contains(query) || name.toLowerCase().contains(query)) {
@@ -340,41 +342,12 @@ public class SpawnControlScreen extends Screen {
 
     public void selectMob(String mobId) {
         selectedMob = mobId;
-        selectedPercent = (int) ((previewSpawnRates.getOrDefault(mobId, 1.0) * 100.0));
+        selectedPercent = (int) (previewSpawnRates.getOrDefault(mobId, 1.0) * 100.0);
         selectedSpawnDisabled = selectedPercent <= 0;
         mobList.selected = mobId;
 
         updatePreviewEntity();
-
         initEntryWidgets();
-    }
-
-    private boolean checkedConn = false;
-
-    @Override
-    public void tick() {
-        if (!checkedConn && !isDedicatedServerConfig) {
-            if (minecraft != null) {
-                if (!minecraft.hasSingleplayerServer()) {
-                    if (minecraft.getConnection() != null) {
-                        onClose();
-                        NetworkHandler.INSTANCE.sendToServer(new ConfigRequestPacket());
-                    }
-
-                    checkedConn = true;
-                }
-            }
-        }
-
-        if (receivedMobCounts != null) {
-            inWorldEntries = receivedMobCounts;
-
-            refreshList();
-
-            receivedMobCounts = null;
-        }
-
-        super.tick();
     }
 
     private boolean previewNotAwailable = false;
@@ -389,8 +362,7 @@ public class SpawnControlScreen extends Screen {
             return;
         }
 
-        ResourceLocation rl = ResourceLocation.parse(selectedMob);
-        EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(rl);
+        EntityType<?> type = EntityType.byString(selectedMob).orElse(null);
         if (type == null) return;
         if (!(type.create(mc.level) instanceof LivingEntity living)) return;
 
@@ -403,7 +375,6 @@ public class SpawnControlScreen extends Screen {
     }
 
     private void initEntryWidgets() {
-        // Remove existing widgets
         if (spawnrateSlider != null) {
             removeWidget(spawnrateSlider);
         }
@@ -411,7 +382,7 @@ public class SpawnControlScreen extends Screen {
             removeWidget(banCheckbox);
         }
 
-        spawnrateSlider = new ForgeSlider(width - 195, 85, 180, 20,
+        spawnrateSlider = new ExtendedSlider(width - 195, 85, 180, 20,
                 Component.translatable("gui.easy_mob_spawn_control.spawn_rate_label"),
                 Component.translatable("gui.easy_mob_spawn_control.spawn_rate_value", selectedPercent),
                 0.0, 100.0, selectedPercent, 1.0, 0, true) {
@@ -427,10 +398,11 @@ public class SpawnControlScreen extends Screen {
                 selectedPercent = (int) (this.value * 100.0);
                 selectedSpawnDisabled = selectedPercent <= 0;
                 double spawnRate = selectedPercent / 100.0;
-                if (spawnRate != 1.0)
+                if (spawnRate != 1.0) {
                     previewSpawnRates.put(selectedMob, selectedSpawnDisabled ? 0.0 : spawnRate);
-                else
+                } else {
                     previewSpawnRates.remove(selectedMob);
+                }
             }
         };
         addRenderableWidget(spawnrateSlider);
@@ -455,40 +427,65 @@ public class SpawnControlScreen extends Screen {
         addRenderableWidget(banCheckbox);
     }
 
+
+    private boolean checkedConn = false;
+
+    @Override
+    public void tick() {
+        if (!checkedConn && !isDedicatedServerConfig) {
+            if (minecraft != null) {
+                if (!minecraft.hasSingleplayerServer()) {
+                    if (minecraft.getConnection() != null) {
+                        onClose();
+                        PacketDistributor.sendToServer(new ConfigRequestPacket());
+                    }
+
+                    checkedConn = true;
+                }
+            }
+        }
+
+        if (receivedMobCounts != null) {
+            inWorldEntries = receivedMobCounts;
+
+            refreshList();
+
+            receivedMobCounts = null;
+        }
+
+        super.tick();
+    }
+
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        renderBackground(graphics);
+        super.render(graphics, mouseX, mouseY, partialTick);
+
         mobList.render(graphics, mouseX, mouseY, partialTick);
-        graphics.drawCenteredString(font, title, width / 2, 8, 0xFFFFFF);
+        graphics.drawCenteredString(font, title, width / 2, 8, 0xFFFFFFFF);
 
         if (selectedMob != null) {
-            graphics.fill(width - 200, 20, width - 10, height - 40, 0x80000000);
-            graphics.drawString(font, selectedMob, width - 195, 25, 0xFFFFFF);
+//            graphics.fill(width - 200, 20, width - 10, height - 40, 0x80000000);
+            graphics.drawString(font, selectedMob, width - 195, 25, 0xFFFFFFFF);
             graphics.drawString(font,
                     Component.translatable("gui.easy_mob_spawn_control.natural_spawn_rate"),
-                    width - 195, 70, 0xFFFFFF);
+                    width - 195, 70, 0xFFFFFFFF);
 
             if (previewEntity != null) {
                 int x = width - 100;
                 int y = height - 60;
 
-                float mouseXAngle = (float) ((x - mouseX) / 40.0);
-                float mouseYAngle = (float) ((y - 50 - mouseY) / 40.0);
-
                 InventoryScreen.renderEntityInInventoryFollowsMouse(
-                        graphics, x, y, 30,
-                        mouseXAngle, mouseYAngle,
+                        graphics, x - 50, y - 50, x + 50, y + 50, 30, 0f,
+                        mouseX, mouseY,
                         previewEntity
                 );
             } else {
                 if (previewNotAwailable)
                     graphics.drawString(font,
                             Component.translatable("gui.easy_mob_spawn_control.preview_unavailable"),
-                            width - 195, height - 60, 0xFFFFFF);
+                            width - 195, height - 60, 0xFFFFFFFF);
             }
         }
-
-        super.render(graphics, mouseX, mouseY, partialTick);
     }
 
     public static class MobEntry {

@@ -1,43 +1,43 @@
 package io.github.catomon.easymobspawncontrol.network;
 
 import io.github.catomon.easymobspawncontrol.CommonConfig;
-import net.minecraft.network.FriendlyByteBuf;
+import io.github.catomon.easymobspawncontrol.ModCommon;
+import io.netty.buffer.ByteBuf;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
-
-import java.util.function.Supplier;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import static io.github.catomon.easymobspawncontrol.network.Util.isNotGameMaster;
 
-// Client-to-Server packet requesting config from server
-public class ConfigRequestPacket {
-    public ConfigRequestPacket() {
+public record ConfigRequestPacket() implements CustomPacketPayload {
 
+    public static final Type<ConfigRequestPacket> TYPE =
+            new Type<>(ResourceLocation.fromNamespaceAndPath(ModCommon.MODID, "config_request"));
+
+    public static final StreamCodec<ByteBuf, ConfigRequestPacket> STREAM_CODEC =
+            StreamCodec.unit(new ConfigRequestPacket());
+
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
-    public ConfigRequestPacket(FriendlyByteBuf buf) {
-
-    }
-
-    public void encode(FriendlyByteBuf buf) {
-
-    }
-
-    public static void handle(ConfigRequestPacket msg, Supplier<NetworkEvent.Context> ctx) {
-        NetworkEvent.Context context = ctx.get();
-
-        if (!context.getDirection().getReceptionSide().isServer()) {
-            context.setPacketHandled(false);
+    public void handle(IPayloadContext context) {
+        if (!context.flow().isServerbound()) {
             return;
         }
 
         context.enqueueWork(() -> {
-            ServerPlayer sender = context.getSender();
-            if (sender == null) return;
+            ServerPlayer sender = (ServerPlayer) context.player();
 
-            if (isNotGameMaster(sender, sender.server)) {
+            MinecraftServer server = sender.getServer();
+            if (server == null) return;
+
+            if (isNotGameMaster(sender, sender.level().getServer())) {
                 sender.sendSystemMessage(Component.translatable("easy_mob_spawn_control.sys_msg.no_permission"));
                 return;
             }
@@ -45,12 +45,7 @@ public class ConfigRequestPacket {
             ConfigPacket configPacket = new ConfigPacket(
                     CommonConfig.spawnRates, CommonConfig.spawnCaps, CommonConfig.bannedMobs
             );
-            NetworkHandler.INSTANCE.send(
-                    PacketDistributor.PLAYER.with(() -> sender),
-                    configPacket
-            );
+            context.reply(configPacket);
         });
-
-        context.setPacketHandled(true);
     }
 }

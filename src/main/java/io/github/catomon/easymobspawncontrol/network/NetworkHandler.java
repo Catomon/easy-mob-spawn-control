@@ -1,59 +1,51 @@
 package io.github.catomon.easymobspawncontrol.network;
 
-import io.github.catomon.easymobspawncontrol.ModCommon;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraftforge.network.NetworkDirection;
-import net.minecraftforge.network.NetworkRegistry;
-import net.minecraftforge.network.simple.SimpleChannel;
-import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.network.registration.HandlerThread;
+import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
-import java.util.Optional;
-
+@EventBusSubscriber
 public class NetworkHandler {
     private static final String PROTOCOL_VERSION = "1";
-    public static final SimpleChannel INSTANCE = NetworkRegistry.newSimpleChannel(
-            new ResourceLocation(ModCommon.MODID, "main"),
-            () -> PROTOCOL_VERSION,
-            (it) -> true,
-            (it) -> true
-    );
 
-    private static int id = 0;
+    @SubscribeEvent
+    public static void registerPayloads(RegisterPayloadHandlersEvent event) {
+        PayloadRegistrar registrar = event.registrar(PROTOCOL_VERSION)
+                .optional()
+                .executesOn(HandlerThread.NETWORK);
 
-    public static void register(FMLCommonSetupEvent event) {
-        INSTANCE.registerMessage(id++,
-                MobCountListRequest.class,
-                MobCountListRequest::encode,
-                MobCountListRequest::new,
-                MobCountListRequest::handle,
-                Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        // Server → Client (Clientbound)
+        registrar.playToClient(
+                MobCountListPacket.TYPE,
+                MobCountListPacket.STREAM_CODEC,
+                MobCountListPacket::handle
+        );
 
-        INSTANCE.registerMessage(id++,
-                ConfigRequestPacket.class,
-                ConfigRequestPacket::encode,
-                ConfigRequestPacket::new,
-                ConfigRequestPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        registrar.playToClient(
+                ConfigPacket.TYPE,
+                ConfigPacket.STREAM_CODEC,
+                ConfigPacket::handle
+        );
 
-        INSTANCE.registerMessage(id++,
-                SaveConfigPacket.class,
-                SaveConfigPacket::encode,
-                SaveConfigPacket::new,
-                SaveConfigPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_SERVER));
+        // Client → Server (Serverbound)
+        registrar.playToServer(
+                ConfigRequestPacket.TYPE,
+                ConfigRequestPacket.STREAM_CODEC,
+                ConfigRequestPacket::handle
+        );
 
-        INSTANCE.registerMessage(id++,
-                ConfigPacket.class,
-                ConfigPacket::encode,
-                ConfigPacket::new,
-                ConfigPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        registrar.playToServer(
+                SaveConfigPacket.TYPE,
+                SaveConfigPacket.STREAM_CODEC,
+                SaveConfigPacket::handle
+        );
 
-        INSTANCE.registerMessage(id++,
-                MobCountListPacket.class,
-                MobCountListPacket::encode,
-                MobCountListPacket::new,
-                MobCountListPacket::handle,
-                Optional.of(NetworkDirection.PLAY_TO_CLIENT));
+        registrar.playToServer(
+                MobCountListRequest.TYPE,
+                MobCountListRequest.STREAM_CODEC,
+                MobCountListRequest::handle
+        );
     }
 }

@@ -2,7 +2,7 @@ package io.github.catomon.easymobspawncontrol;
 
 import com.mojang.logging.LogUtils;
 import net.minecraft.world.entity.MobCategory;
-import net.minecraftforge.common.ForgeConfigSpec;
+import net.neoforged.neoforge.common.ModConfigSpec;
 import org.slf4j.Logger;
 
 import java.util.*;
@@ -10,19 +10,19 @@ import java.util.stream.Collectors;
 
 public class CommonConfig {
     private static final Logger LOGGER = LogUtils.getLogger();
-    public static final ForgeConfigSpec SPEC;
+    public static final ModConfigSpec SPEC;
 
     public static Map<String, Double> spawnRates = new HashMap<>();
     public static Map<String, Integer> spawnCaps = new HashMap<>();
 
-    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> BANNED_MOBS_LIST;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> BANNED_MOBS_LIST;
     public static List<String> bannedMobs = List.of();
 
-    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> SPAWN_RATES_LIST;
-    public static final ForgeConfigSpec.ConfigValue<List<? extends String>> SPAWN_CAPS_LIST;  // NEW
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> SPAWN_RATES_LIST;
+    public static final ModConfigSpec.ConfigValue<List<? extends String>> SPAWN_CAPS_LIST;
 
     static {
-        ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
+        ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
         builder.push("config_v1");
 
         BANNED_MOBS_LIST = builder.comment("Banned mobs (ex: \"minecraft:creeper\", \"minecraft:zombie\"")
@@ -54,6 +54,8 @@ public class CommonConfig {
     }
 
     public static void parseConfig() {
+        if (!SPEC.isLoaded()) return;
+
         spawnRates.clear();
         spawnCaps.clear();
 
@@ -77,7 +79,7 @@ public class CommonConfig {
         }
         LOGGER.debug("Loaded {} spawn rates", spawnRates.size());
 
-        // Parse spawnCaps
+        // Parse spawnCaps (per‑category)
         for (String entry : SPAWN_CAPS_LIST.get()) {
             String[] parts = entry.split("=", 2);
             if (parts.length == 2) {
@@ -86,7 +88,7 @@ public class CommonConfig {
                     int cap = Integer.parseInt(parts[1].trim());
 
                     if (cap < 0 || cap > 999) {
-                        LOGGER.warn("Spawn cap for category {} is {} (out of 1–999); skipped.", catName, cap);
+                        LOGGER.warn("Spawn cap for category {} is {} (out of 1–350); skipped.", catName, cap);
                         continue;
                     }
 

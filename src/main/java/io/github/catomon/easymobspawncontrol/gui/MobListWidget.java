@@ -12,10 +12,8 @@ public class MobListWidget extends ObjectSelectionList<MobListWidget.MobEntryWid
     public String selected = null;
 
     public MobListWidget(SpawnControlScreen parent) {
-        super(parent.getMinecraft(), 270, parent.height, 80, parent.height - 50, 18);
+        super(parent.getMinecraft(), 270, parent.height - 120, 80, 20);
         this.parent = parent;
-        this.setRenderBackground(false);
-        this.setRenderTopAndBottom(false);
     }
 
     public void refresh(List<SpawnControlScreen.MobEntry> entries) {
@@ -23,6 +21,11 @@ public class MobListWidget extends ObjectSelectionList<MobListWidget.MobEntryWid
         for (SpawnControlScreen.MobEntry entry : entries) {
             addEntry(new MobEntryWidget(this, entry));
         }
+    }
+
+    @Override
+    protected void renderListBackground(GuiGraphics guiGraphics) {
+
     }
 
     public static class MobEntryWidget extends ObjectSelectionList.Entry<MobEntryWidget> {
@@ -36,10 +39,18 @@ public class MobListWidget extends ObjectSelectionList<MobListWidget.MobEntryWid
 
         @Override
         public void render(GuiGraphics graphics, int index, int top, int left, int width, int height, int mouseX, int mouseY, boolean hovered, float partialTick) {
+            if (list.selected != null && list.selected.equals(entry.id)) {
+                graphics.fill(left, top, left + width, top + height, 0x8060C0FF);
+            }
+
+            if (hovered) {
+                graphics.fill(left, top, left + width, top + height, 0x80FFFFFF);
+            }
+
             if (list.parent.viewMode == SpawnControlScreen.ViewMode.IN_WORLD) {
-                graphics.drawString(list.parent.getMinecraft().font, entry.displayName + " " + list.parent.inWorldEntries.getOrDefault(entry.id, 0), left + 4, top + 4, 0xFFFFFF);
+                graphics.drawString(list.parent.getMinecraft().font, entry.displayName + " " + list.parent.inWorldEntries.getOrDefault(entry.id, 0), left + 4, top + 4, 0xFFFFFFFF);
             } else {
-                graphics.drawString(list.parent.getMinecraft().font, entry.displayName, left + 4, top + 4, 0xFFFFFF);
+                graphics.drawString(list.parent.getMinecraft().font, entry.displayName, left + 4, top + 4, 0xFFFFFFFF);
             }
         }
 

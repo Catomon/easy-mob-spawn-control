@@ -1,75 +1,63 @@
 package io.github.catomon.easymobspawncontrol.network;
 
 import io.github.catomon.easymobspawncontrol.ModCommon;
+import io.netty.buffer.ByteBuf;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.network.PacketDistributor;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+import net.neoforged.neoforge.server.ServerLifecycleHooks;
 
 import java.util.HashMap;
-import java.util.function.Supplier;
 
 import static io.github.catomon.easymobspawncontrol.network.Util.isNotGameMaster;
 
-// Client-to-Server packet requesting mob count from server
-public class MobCountListRequest {
-    public MobCountListRequest() {
+public record MobCountListRequest() implements CustomPacketPayload {
 
+    public static final Type<MobCountListRequest> TYPE =
+            new Type<>(ResourceLocation.fromNamespaceAndPath(ModCommon.MODID, "mob_count_list_request"));
+
+    public static final StreamCodec<ByteBuf, MobCountListRequest> STREAM_CODEC =
+            StreamCodec.unit(new MobCountListRequest());
+
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
-    public MobCountListRequest(FriendlyByteBuf buf) {
-
-    }
-
-    public void encode(FriendlyByteBuf buf) {
-
-    }
-
-    public static void handle(MobCountListRequest msg, Supplier<NetworkEvent.Context> ctx) {
-        NetworkEvent.Context context = ctx.get();
-
-        if (!context.getDirection().getReceptionSide().isServer()) {
-            context.setPacketHandled(false);
+    public void handle(IPayloadContext context) {
+        if (!context.flow().isServerbound()) {
             return;
         }
 
         context.enqueueWork(() -> {
-            ServerPlayer sender = context.getSender();
-            if (sender == null) return;
+            ServerPlayer sender = (ServerPlayer) context.player();
 
-            if (isNotGameMaster(sender, sender.server)) {
+            MinecraftServer server = ServerLifecycleHooks.getCurrentServer();
+            if (server == null) return;
+
+            if (isNotGameMaster(sender, sender.level().getServer())) {
                 sender.sendSystemMessage(Component.translatable("easy_mob_spawn_control.sys_msg.no_permission"));
                 return;
             }
 
-            try {
-                var serverLevel = sender.serverLevel();
-                HashMap<String, Integer> mobs = new HashMap<>();
-                for (Entity entity : serverLevel.getEntities().getAll()) {
-                    ResourceLocation id = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
-                    if (id == null) continue;
+            var serverLevel = sender.serverLevel();
+            HashMap<String, Integer> mobs = new HashMap<>();
+            for (Entity entity : serverLevel.getAllEntities()) {
+                ResourceLocation id = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType());
+                if (id == null) continue;
 
-                    String key = id.toString();
-                    mobs.merge(key, 1, Integer::sum);
-                }
-
-                MobCountListPacket configPacket = new MobCountListPacket(
-                        mobs
-                );
-                NetworkHandler.INSTANCE.send(
-                        PacketDistributor.PLAYER.with(() -> sender),
-                        configPacket
-                );
-            } catch (Exception e) {
-                System.err.println(ModCommon.MODID + ": failed to update IN_WORLD mob list.");
-                e.printStackTrace();
+                String key = id.toString();
+                mobs.merge(key, 1, Integer::sum);
             }
-        });
 
-        context.setPacketHandled(true);
+            MobCountListPacket configPacket = new MobCountListPacket(mobs);
+            context.reply(configPacket);
+        });
     }
 }

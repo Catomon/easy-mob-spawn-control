@@ -1,91 +1,98 @@
 package io.github.catomon.easymobspawncontrol.network;
 
 import io.github.catomon.easymobspawncontrol.CommonConfig;
-import net.minecraft.network.FriendlyByteBuf;
+import io.github.catomon.easymobspawncontrol.ModCommon;
+import io.netty.buffer.ByteBuf;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
-import net.minecraftforge.network.NetworkEvent;
-import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraft.world.entity.EntityType;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
+import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Supplier;
 
 import static io.github.catomon.easymobspawncontrol.network.Util.isNotGameMaster;
 
-// Client-to-Server packet requesting to save updated config on server
-public class SaveConfigPacket {
-    private final Map<String, Double> spawnRates;
-    private final Map<String, Integer> spawnCaps;
-    private final List<String> bannedMobs;
+public record SaveConfigPacket(
+        Map<String, Double> spawnRates,
+        Map<String, Integer> spawnCaps,
+        List<String> bannedMobs
+) implements CustomPacketPayload {
 
-    public SaveConfigPacket(Map<String, Double> spawnRates, Map<String, Integer> spawnCaps, List<String> bannedMobs) {
-        this.spawnRates = new HashMap<>(spawnRates);
-        this.spawnCaps = new HashMap<>(spawnCaps);
-        this.bannedMobs = new ArrayList<>(bannedMobs);
+    public static final Type<SaveConfigPacket> TYPE =
+            new Type<>(ResourceLocation.fromNamespaceAndPath(ModCommon.MODID, "save_config"));
+
+    public static final StreamCodec<ByteBuf, SaveConfigPacket> STREAM_CODEC =
+            StreamCodec.composite(
+                    ByteBufCodecs.map(HashMap::new, ByteBufCodecs.STRING_UTF8, ByteBufCodecs.DOUBLE),
+                    SaveConfigPacket::spawnRates,
+
+                    ByteBufCodecs.map(HashMap::new, ByteBufCodecs.STRING_UTF8, ByteBufCodecs.VAR_INT),
+                    SaveConfigPacket::spawnCaps,
+
+                    ByteBufCodecs.STRING_UTF8.apply(ByteBufCodecs.list()),
+                    SaveConfigPacket::bannedMobs,
+
+                    SaveConfigPacket::new
+            );
+
+    @Override
+    public @NotNull Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
-    public SaveConfigPacket(FriendlyByteBuf buf) {
-        this.spawnRates = buf.readMap(FriendlyByteBuf::readUtf, FriendlyByteBuf::readDouble);
-        this.spawnCaps = buf.readMap(FriendlyByteBuf::readUtf, FriendlyByteBuf::readInt);
-        this.bannedMobs = buf.readList(FriendlyByteBuf::readUtf);
-    }
-
-    public void encode(FriendlyByteBuf buf) {
-        buf.writeMap(this.spawnRates, FriendlyByteBuf::writeUtf, FriendlyByteBuf::writeDouble);
-        buf.writeMap(this.spawnCaps, FriendlyByteBuf::writeUtf, FriendlyByteBuf::writeInt);
-        buf.writeCollection(this.bannedMobs, FriendlyByteBuf::writeUtf);
-    }
-
-    public static void handle(SaveConfigPacket msg, Supplier<NetworkEvent.Context> ctx) {
-        NetworkEvent.Context context = ctx.get();
-
-        if (!context.getDirection().getReceptionSide().isServer()) {
-            context.setPacketHandled(false);
+    public void handle(IPayloadContext context) {
+        if (!context.flow().isServerbound()) {
             return;
         }
 
         context.enqueueWork(() -> {
-            ServerPlayer sender = context.getSender();
-            if (sender == null) return;
+            ServerPlayer sender = (ServerPlayer) context.player();
 
-            if (isNotGameMaster(sender, sender.server)) {
+            MinecraftServer server = sender.getServer();
+            if (server == null) return;
+
+            if (isNotGameMaster(sender, sender.level().getServer())) {
                 sender.sendSystemMessage(Component.translatable("easy_mob_spawn_control.sys_msg.no_permission"));
                 return;
             }
 
             // Update server config data from client
             CommonConfig.spawnRates.clear();
-            CommonConfig.spawnRates.putAll(msg.spawnRates);
+            CommonConfig.spawnRates.putAll(spawnRates);
 
             CommonConfig.spawnCaps.clear();
-            CommonConfig.spawnCaps.putAll(msg.spawnCaps);
+            CommonConfig.spawnCaps.putAll(spawnCaps);
 
             CommonConfig.bannedMobs.clear();
-            CommonConfig.bannedMobs.addAll(msg.bannedMobs);
+            CommonConfig.bannedMobs.addAll(bannedMobs);
 
-            // Save to Forge config file
-            CommonConfig.saveSpawnRates(msg.spawnRates);
-            CommonConfig.saveSpawnCaps(msg.spawnCaps);
-            CommonConfig.saveBannedMobs(msg.bannedMobs);
+            // Save to config file
+            CommonConfig.saveSpawnRates(spawnRates);
+            CommonConfig.saveSpawnCaps(spawnCaps);
+            CommonConfig.saveBannedMobs(bannedMobs);
 
             // Reload for immediate effect
             CommonConfig.reload();
 
-            context.getSender().server.executeBlocking(() -> {
-                for (ServerLevel serverLevel :  context.getSender().server.getAllLevels()) {
+            // Remove already‑spawned banned mobs
+            server.executeBlocking(() -> {
+                for (ServerLevel serverLevel : server.getAllLevels()) {
                     List<Entity> bannedEntities = new ArrayList<>();
                     for (Entity entity : serverLevel.getEntities().getAll()) {
-                        var key = ForgeRegistries.ENTITY_TYPES.getKey(entity.getType());
-                        if (key != null) {
-                            String id = key.toString();
-                            if (CommonConfig.bannedMobs.contains(id)) {
-                                bannedEntities.add(entity);
-                            }
+                        var key = EntityType.getKey(entity.getType());
+                        if (key != null && CommonConfig.bannedMobs.contains(key.toString())) {
+                            bannedEntities.add(entity);
                         }
                     }
                     for (Entity entity : bannedEntities) {
@@ -96,7 +103,5 @@ public class SaveConfigPacket {
 
             sender.sendSystemMessage(Component.translatable("easy_mob_spawn_control.sys_msg.server_config_updated"));
         });
-
-        context.setPacketHandled(true);
     }
 }

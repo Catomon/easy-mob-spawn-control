@@ -1,38 +1,42 @@
 package io.github.catomon.easymobspawncontrol.network;
 
-import net.minecraft.network.FriendlyByteBuf;
-import net.minecraftforge.network.NetworkEvent;
+import io.github.catomon.easymobspawncontrol.ModCommon;
+import io.netty.buffer.ByteBuf;
+import net.minecraft.network.codec.ByteBufCodecs;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.function.Supplier;
 
-// Server-to-client mob count packet
-public class MobCountListPacket {
-    public final Map<String, Integer> mobCounts;
+public record MobCountListPacket(
+        Map<String, Integer> mobCounts
+) implements CustomPacketPayload {
 
-    public MobCountListPacket(Map<String, Integer> mobCounts) {
-        this.mobCounts = new HashMap<>(mobCounts);
+    public static final Type<MobCountListPacket> TYPE =
+            new Type<>(ResourceLocation.fromNamespaceAndPath(ModCommon.MODID, "mob_count_list"));
+
+    public static final StreamCodec<ByteBuf, MobCountListPacket> STREAM_CODEC =
+            StreamCodec.composite(
+                    ByteBufCodecs.map(HashMap::new, ByteBufCodecs.STRING_UTF8, ByteBufCodecs.VAR_INT),
+                    MobCountListPacket::mobCounts,
+                    MobCountListPacket::new
+            );
+
+    @Override
+    public Type<? extends CustomPacketPayload> type() {
+        return TYPE;
     }
 
-    public MobCountListPacket(FriendlyByteBuf buf) {
-        this.mobCounts = buf.readMap(FriendlyByteBuf::readUtf, FriendlyByteBuf::readInt);
-    }
-
-    public void encode(FriendlyByteBuf buf) {
-        buf.writeMap(this.mobCounts, FriendlyByteBuf::writeUtf, FriendlyByteBuf::writeInt);
-    }
-
-    public static void handle(MobCountListPacket msg, Supplier<NetworkEvent.Context> ctx) {
-        NetworkEvent.Context context = ctx.get();
-
-        if (!context.getDirection().getReceptionSide().isClient()) {
-            context.setPacketHandled(false);
+    public void handle(IPayloadContext context) {
+        if (!context.flow().isClientbound()) {
             return;
         }
 
-        ClientHandler.handle(msg, ctx);
-
-        context.setPacketHandled(true);
+        context.enqueueWork(() -> {
+            ClientHandler.handle(this);
+        });
     }
 }

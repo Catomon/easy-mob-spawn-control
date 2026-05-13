@@ -2,22 +2,22 @@ package io.github.catomon.easymobspawncontrol.network;
 
 import io.github.catomon.easymobspawncontrol.gui.SpawnControlScreen;
 import net.minecraft.client.Minecraft;
-import net.minecraftforge.network.NetworkEvent;
-
-import java.util.function.Supplier;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 public class ClientHandler {
-    public static void handle(ConfigPacket msg, Supplier<NetworkEvent.Context> context) {
-        context.get().enqueueWork(() -> {
-            Minecraft.getInstance().setScreen(new SpawnControlScreen(
-                    msg.spawnRates, msg.bannedMobs, msg.spawnCaps, true
+    public static void handle(ConfigPacket msg) {
+        Minecraft minecraft = Minecraft.getInstance();
+        minecraft.execute(() -> {
+            minecraft.setScreen(new SpawnControlScreen(
+                    msg.spawnRates(),
+                    msg.bannedMobs(),
+                    msg.spawnCaps(),
+                    true
             ));
         });
     }
 
-    public static void handle(MobCountListPacket msg, Supplier<NetworkEvent.Context> context) {
-        context.get().enqueueWork(() -> {
-            SpawnControlScreen.setMobCounts(msg.mobCounts);
-        });
+    public static void handle(MobCountListPacket msg) {
+        SpawnControlScreen.setMobCounts(msg.mobCounts());
     }
 }

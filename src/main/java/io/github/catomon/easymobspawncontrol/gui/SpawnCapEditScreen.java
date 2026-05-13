@@ -9,8 +9,8 @@ import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.MobCategory;
-import net.minecraftforge.client.gui.widget.ForgeSlider;
-import net.minecraftforge.client.gui.widget.ScrollPanel;
+import net.neoforged.neoforge.client.gui.widget.ExtendedSlider;
+import net.neoforged.neoforge.client.gui.widget.ScrollPanel;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.ArrayList;
@@ -21,7 +21,7 @@ import java.util.Map;
 public class SpawnCapEditScreen extends Screen {
 
     private final Map<String, Integer> previewCaps;
-    private final Map<MobCategory, ForgeSlider> capSliders = new LinkedHashMap<>();
+    private final Map<MobCategory, ExtendedSlider> capSliders = new LinkedHashMap<>();
     private Button applyButton;
     private Button cancelButton;
     private Button resetButton;
@@ -57,9 +57,9 @@ public class SpawnCapEditScreen extends Screen {
             int def = category.getMaxInstancesPerChunk();
             int current = previewCaps.getOrDefault(name, def);
 
-            ForgeSlider slider = createSlider(category, current, panelX + 185, rowY);
+            ExtendedSlider slider = createSlider(category, current, panelX + 185, rowY);
             capSliders.put(category, slider);
-            addWidget(slider);
+            addWidget(slider);  // Key: addWidget for input, not addRenderableWidget
 
             rowY += 25;
         }
@@ -101,40 +101,38 @@ public class SpawnCapEditScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        renderBackground(graphics);
+        super.render(graphics, mouseX, mouseY, partialTick);
 
         graphics.drawString(font, title, width / 2, 8, 0xFFFFFF);
         graphics.drawString(font, Component.translatable("gui.easy_mob_spawn_control.help_text"), 20, 25, 0xCCCCCC);
 
+        // Panel background
         int panelX = 15;
         int panelY = 35;
         int panelW = width - 30;
         int panelH = height - 75;
 //        graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, 0x70000000);
 
-        // Clip everything to panel bounds
+        // Clip everything to panel bounds (NeoForge 1.21.1 GuiGraphics)
         graphics.enableScissor(panelX, panelY, panelX + panelW, panelY + panelH);
 
         capPanel.render(graphics, mouseX, mouseY, partialTick);
 
         graphics.disableScissor();
-
-        // Buttons render outside clipping
-        super.render(graphics, mouseX, mouseY, partialTick);
     }
 
-    private ForgeSlider createSlider(MobCategory category, int currentCap, int x, int y) {
-        return new ForgeSlider(
+    private ExtendedSlider createSlider(MobCategory category, int currentCap, int x, int y) {
+        return new ExtendedSlider(
                 x, y, 180, 20,
                 Component.literal(""),
-                Component.literal(Integer.toString(currentCap)),
+                Component.literal(currentCap + ""),
                 0.0, 300.0,
                 currentCap, 1.0, 0, true
         ) {
             @Override
             protected void updateMessage() {
                 int v = (int) (this.value * 300);
-                this.setMessage(Component.literal(Integer.toString(v)));
+                this.setMessage(Component.literal(v + ""));
             }
 
             @Override
@@ -159,13 +157,13 @@ public class SpawnCapEditScreen extends Screen {
         }
 
         @Override
-        protected void drawBackground(GuiGraphics guiGraphics, Tesselator tess, float partialTick) {
-//            super.drawBackground(guiGraphics, tess, partialTick);
+        protected int getContentHeight() {
+            return categories.size() * 25 + 8;
         }
 
         @Override
-        protected int getContentHeight() {
-            return categories.size() * 25 + 8;
+        protected void drawBackground(GuiGraphics guiGraphics, Tesselator tess, float partialTick) {
+//            super.drawBackground(guiGraphics, tess, partialTick);
         }
 
         @Override
@@ -181,7 +179,7 @@ public class SpawnCapEditScreen extends Screen {
                         0xFFFFFF
                 );
 
-                ForgeSlider slider = capSliders.get(category);
+                ExtendedSlider slider = capSliders.get(category);
                 if (slider != null) {
                     slider.setX(left + 185);
                     slider.setY(y);
